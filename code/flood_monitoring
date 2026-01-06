@@ -1,0 +1,100 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SoftwareSerial.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+SoftwareSerial gsm(D4, D3); // RX, TX
+
+// Pins
+#define TRIG D5
+#define ECHO D6
+#define FLOAT_SWITCH D7
+#define BUZZER D8
+
+// Variables
+long duration;
+int distance;
+int waterLevel;
+
+unsigned long lastSMS = 0;
+unsigned long smsInterval = 300000; // 5 minutes
+
+// Phone number
+String phoneNumber = "+91XXXXXXXXXX";  // replace with your requied phone number
+
+void setup() {
+  pinMode(TRIG, OUTPUT);
+  pinMode(ECHO, INPUT);
+  pinMode(FLOAT_SWITCH, INPUT_PULLUP);
+  pinMode(BUZZER, OUTPUT);
+
+  lcd.init();
+  lcd.backlight();
+
+  gsm.begin(9600);
+  delay(2000);
+
+  lcd.setCursor(0, 0);
+  lcd.print("Flood Monitor");
+  lcd.setCursor(0, 1);
+  lcd.print("System Ready");
+
+  delay(3000);
+  lcd.clear();
+}
+
+void loop() {
+
+  // Ultrasonic distance
+  digitalWrite(TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+
+  duration = pulseIn(ECHO, HIGH);
+  distance = duration * 0.034 / 2;
+
+  waterLevel = 100 - distance;  // adjust as per river depth
+
+  // LCD Display
+  lcd.setCursor(0, 0);
+  lcd.print("Water Level:");
+  lcd.setCursor(0, 1);
+  lcd.print(waterLevel);
+  lcd.print(" cm    ");
+
+  // Periodic SMS
+  if (millis() - lastSMS > smsInterval) {
+    sendSMS("Water Level: " + String(waterLevel) + " cm");
+    lastSMS = millis();
+  }
+
+  // Danger Level
+  if (waterLevel > 70) {
+    digitalWrite(BUZZER, HIGH);
+    sendSMS("WARNING! Water level high: " + String(waterLevel) + " cm");
+    delay(10000);
+  } else {
+    digitalWrite(BUZZER, LOW);
+  }
+
+  // Flood Switch Trigger
+  if (digitalRead(FLOAT_SWITCH) == LOW) {
+    digitalWrite(BUZZER, HIGH);
+    sendSMS("EMERGENCY! FLOOD DETECTED!");
+    delay(15000);
+  }
+
+  delay(1000);
+}
+
+void sendSMS(String message) {
+  gsm.println("AT+CMGF=1");
+  delay(1000);
+  gsm.println("AT+CMGS=\"" + phoneNumber + "\"");
+  delay(1000);
+  gsm.print(message);
+  delay(500);
+  gsm.write(26);
+  delay(3000);
+}
